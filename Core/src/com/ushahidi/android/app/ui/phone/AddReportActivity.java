@@ -115,6 +115,8 @@ public class AddReportActivity extends
 
 	private static final int DIALOG_SHOW_DELETE_PROMPT = 9;
 
+	private static final int DIALOG_CHOOSE_VIDEO_METHOD = 10;
+	
 	private static final int REQUEST_CODE_CAMERA = 0;
 
 	private static final int REQUEST_CODE_IMAGE = 1;
@@ -143,6 +145,8 @@ public class AddReportActivity extends
 
 	private String photoName;
 
+	private String videoName;
+	
 	private AddReportModel model;
 
 	public AddReportActivity() {
@@ -163,6 +167,7 @@ public class AddReportActivity extends
 		}
 
 		view.mBtnPicture.setOnClickListener(this);
+		view.mBtnVideo.setOnClickListener(this);
 		view.mBtnAddCategory.setOnClickListener(this);
 		view.mPickDate.setOnClickListener(this);
 		view.mPickTime.setOnClickListener(this);
@@ -296,6 +301,14 @@ public class AddReportActivity extends
 			Preferences.saveSettings(AddReportActivity.this);
 			createDialog(DIALOG_CHOOSE_IMAGE_METHOD);
 
+		} else if (button.getId() == R.id.btnVideo) {
+			// get a file name for the photo to be uploaded
+			videoName = Util.getDateTime() + ".mp4";
+
+			// keep a copy of the filename for later reuse
+			Preferences.fileName = videoName;
+			Preferences.saveSettings(AddReportActivity.this);
+			createDialog(DIALOG_CHOOSE_VIDEO_METHOD);			
 		} else if (button.getId() == R.id.add_category) {
 			createDialog(DIALOG_MULTIPLE_CATEGORY);
 		} else if (button.getId() == R.id.pick_date) {
@@ -624,6 +637,52 @@ public class AddReportActivity extends
 			break;
 		}
 
+		case DIALOG_CHOOSE_VIDEO_METHOD: {
+
+			Dialog dialog = new AlertDialog.Builder(this)
+					.setTitle(R.string.choose_method)
+					.setMessage(R.string.how_to_select_pic)
+					.setPositiveButton(getString(R.string.gallery_option),
+							new Dialog.OnClickListener() {
+								public void onClick(DialogInterface dialog,
+										int which) {
+									Intent intent = new Intent();
+									intent.setAction(Intent.ACTION_PICK);
+									intent.setData(MediaStore.Images.Media.EXTERNAL_CONTENT_URI);
+									startActivityForResult(intent,
+											REQUEST_CODE_IMAGE);
+									dialog.dismiss();
+								}
+							})
+					.setNegativeButton(getString(R.string.cancel),
+							new Dialog.OnClickListener() {
+								public void onClick(DialogInterface dialog,
+										int which) {
+									dialog.dismiss();
+								}
+							})
+
+					.setNeutralButton(R.string.camera_option,
+							new Dialog.OnClickListener() {
+								public void onClick(DialogInterface dialog,
+										int which) {
+									Intent intent = new Intent(
+											android.provider.MediaStore.ACTION_IMAGE_CAPTURE);
+									intent.putExtra(MediaStore.EXTRA_OUTPUT,
+											PhotoUtils.getPhotoUri(photoName,
+													AddReportActivity.this));
+									startActivityForResult(intent,
+											REQUEST_CODE_CAMERA);
+									dialog.dismiss();
+								}
+							})
+
+					.setCancelable(false).create();
+			dialog.show();
+			break;
+		}
+
+		
 		case DIALOG_MULTIPLE_CATEGORY: {
 			if (showCategories() != null) {
 				new AlertDialog.Builder(this)

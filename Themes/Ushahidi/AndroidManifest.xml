@@ -39,14 +39,14 @@
 
     <uses-sdk
         android:minSdkVersion="8"
-        android:targetSdkVersion="18" />
+        android:targetSdkVersion="19" />
 
     <application
         android:name="com.ushahidi.android.app.MainApplication"
         android:hardwareAccelerated="true"
         android:icon="@drawable/app_icon"
         android:label="@string/app_title"
-        android:theme="@style/Theme.Ushahidi" >
+        android:theme="@style/Theme.Ushahidi" android:debuggable="true">
 
         <!-- Settings -->
         <activity

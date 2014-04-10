@@ -62,6 +62,8 @@ public class AddReportView extends View {
 	public Button mPickDate;
 
 	public Button mBtnPicture;
+
+	public Button mBtnVideo;
 	
 	public Button mDeleteReport;
 
@@ -75,6 +77,7 @@ public class AddReportView extends View {
 		super(activity);
 
 		mBtnPicture = (Button) activity.findViewById(R.id.btnPicture);
+		mBtnVideo = (Button) activity.findViewById(R.id.btnVideo);
 		mBtnAddCategory = (Button) activity.findViewById(R.id.add_category);
 		mPickDate = (Button) activity.findViewById(R.id.pick_date);
 		mPickTime = (Button) activity.findViewById(R.id.pick_time);

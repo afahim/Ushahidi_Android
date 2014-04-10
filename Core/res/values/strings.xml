@@ -144,6 +144,7 @@
     <string name="ok">OK</string>
     <string name="error_occured">Error occurred while fetching </string>
     <string name="photos">Photos</string>
+    <string name="videos">Videos</string>
     <string name="news">News</string>
     <string name="video">Video</string>
     <string name="audio">Audio</string>
@@ -227,6 +228,7 @@
     <string name="refresh">Refresh</string>
     <string name="no_checkin">No Checkin</string>
     <string name="add_photo">Add Photo</string>
+    <string name="add_video">Add Video</string>
     <string name="select_category">Select Category</string>
     <string name="change_date">Change date</string>
     <string name="change_time">Change time</string>
