@@ -7,5 +7,14 @@
 	<classpathentry kind="src" path="src"/>
 	<classpathentry kind="src" path="gen"/>
 	<classpathentry kind="lib" path="libs/ushahidi_sdk-1.1.jar"/>
+	<classpathentry exported="true" kind="lib" path="C:/Users/afahim/Desktop/scribe-1.3.5.jar"/>
+	<classpathentry kind="lib" path="C:/Users/afahim/Downloads/google-oauth-java-client-featured/google-oauth-java-client/libs/google-oauth-client-1.18.0-rc.jar"/>
+	<classpathentry kind="lib" path="C:/Users/afahim/Downloads/google-api-java-client-featured/google-api-java-client/libs/google-api-client-1.18.0-rc.jar"/>
+	<classpathentry kind="lib" path="C:/Users/afahim/Downloads/google-api-services-youtube-v3-rev104-java-1.18.0-rc/youtube/google-api-services-youtube-v3-rev104-1.18.0-rc.jar"/>
+	<classpathentry kind="lib" path="C:/Users/afahim/Downloads/google-api-services-youtube-v3-rev104-java-1.18.0-rc/youtube/libs/google-http-client-1.18.0-rc.jar"/>
+	<classpathentry kind="lib" path="C:/Users/afahim/Downloads/google-api-java-client-featured/google-api-java-client/libs/google-oauth-client-java6-1.18.0-rc.jar"/>
+	<classpathentry kind="lib" path="C:/Users/afahim/Downloads/google-api-java-client-featured/google-api-java-client/libs/google-oauth-client-jetty-1.18.0-rc.jar"/>
+	<classpathentry kind="lib" path="C:/Users/afahim/Downloads/google-api-java-client-featured/google-api-java-client/libs/google-http-client-jackson2-1.18.0-rc.jar"/>
+	<classpathentry kind="lib" path="C:/Users/afahim/Downloads/guava-17.0.jar"/>
 	<classpathentry kind="output" path="bin/classes"/>
 </classpath>

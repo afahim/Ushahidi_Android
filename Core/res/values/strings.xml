@@ -35,6 +35,7 @@
     <string name="please_wait">Please wait...</string>
     <string name="choose_method">Choose Method</string>
     <string name="how_to_select_pic">Please choose how you would like to get the picture.</string>
+    <string name="how_to_select_vid">Please choose how you would like to get the video.</string>
     <string name="camera_option">Camera</string>
     <string name="gallery_option">Gallery</string>
     <string name="network_error">Network Error</string>

@@ -21,16 +21,37 @@
 package com.ushahidi.android.app.ui.phone;
 
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.IOException;
+import java.io.StringReader;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Calendar;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Vector;
+import java.util.concurrent.ExecutionException;
 
+import javax.xml.parsers.DocumentBuilder;
+import javax.xml.parsers.DocumentBuilderFactory;
+
+import org.scribe.builder.ServiceBuilder;
+import org.scribe.builder.api.VimeoApi;
+import org.scribe.model.OAuthRequest;
+import org.scribe.model.Response;
+import org.scribe.model.Token;
+import org.scribe.model.Verb;
+import org.scribe.oauth.OAuthService;
+import org.w3c.dom.Document;
+import org.w3c.dom.Element;
+import org.xml.sax.InputSource;
+
+import android.annotation.SuppressLint;
 import android.app.AlertDialog;
 import android.app.DatePickerDialog;
 import android.app.Dialog;
@@ -39,15 +60,20 @@ import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.res.Resources;
+import android.database.Cursor;
 import android.graphics.Bitmap;
 import android.location.Location;
 import android.net.Uri;
+import android.os.AsyncTask;
 import android.os.Bundle;
 import android.provider.MediaStore;
+
 import com.actionbarsherlock.view.MenuItem;
+
 import android.text.Editable;
 import android.text.TextUtils;
 import android.text.TextWatcher;
+import android.util.Log;
 import android.view.ContextMenu;
 import android.view.ContextMenu.ContextMenuInfo;
 import android.view.MenuInflater;
@@ -121,6 +147,8 @@ public class AddReportActivity extends
 
 	private static final int REQUEST_CODE_IMAGE = 1;
 
+	private static final int REQUEST_CODE_VIDEO = 2;
+	
 	private Calendar mCalendar;
 
 	// private String mDateToSubmit = "";
@@ -148,6 +176,13 @@ public class AddReportActivity extends
 	private String videoName;
 	
 	private AddReportModel model;
+	
+    private static OAuthService service;
+    private static Token accessToken;
+    private static String fileLocation;
+    private static String newline = System.getProperty("line.separator");
+    private static int bufferSize = 1048576; // 1 MB = 1048576 bytes
+
 
 	public AddReportActivity() {
 		super(AddReportView.class, R.layout.add_report, R.menu.add_report,
@@ -641,16 +676,16 @@ public class AddReportActivity extends
 
 			Dialog dialog = new AlertDialog.Builder(this)
 					.setTitle(R.string.choose_method)
-					.setMessage(R.string.how_to_select_pic)
+					.setMessage(R.string.how_to_select_vid)
 					.setPositiveButton(getString(R.string.gallery_option),
 							new Dialog.OnClickListener() {
 								public void onClick(DialogInterface dialog,
 										int which) {
 									Intent intent = new Intent();
 									intent.setAction(Intent.ACTION_PICK);
-									intent.setData(MediaStore.Images.Media.EXTERNAL_CONTENT_URI);
+									intent.setData(MediaStore.Video.Media.EXTERNAL_CONTENT_URI);
 									startActivityForResult(intent,
-											REQUEST_CODE_IMAGE);
+											REQUEST_CODE_VIDEO);
 									dialog.dismiss();
 								}
 							})
@@ -1096,8 +1131,25 @@ public class AddReportActivity extends
 				PhotoUtils.savePhoto(this, bitmap, photoName);
 				log(String.format("REQUEST_CODE_IMAGE %dx%d",
 						bitmap.getWidth(), bitmap.getHeight()));
+				
+			} else if (requestCode == REQUEST_CODE_VIDEO) {
+				Uri uri = data.getData();
+			    String[] proj = { MediaStore.Images.Media.DATA };
+			    Cursor cursor = this.getContentResolver().query(uri,  proj, null, null, null);
+			    int column_index = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DATA);
+			    cursor.moveToFirst();
+			    final String fileLocation = cursor.getString(column_index);
+			    
+		        class UploadVideo extends AsyncTask {
+		            protected Object doInBackground(Object... urls) {
+					    uploadToVimeo(fileLocation);
+						return null;
+		            }
+		        }
+		        
+		        UploadVideo sendVideo = new UploadVideo();
+		        sendVideo.execute();
 			}
-
 			if (id > 0) {
 				addPhotoToReport();
 			} else {
@@ -1106,6 +1158,387 @@ public class AddReportActivity extends
 		}
 	}
 
+	  /**
+	   * Sets the video's meta-data
+	   */
+	  private static void uploadToVimeo(String fileLocation) {
+	        String apiKey = "46808ac7e90549f2536ab035b449b095bc2fa373"; 
+	        String apiSecret = "98bbb44fb4fbcf5d8a32a051a7e4d5289a4b9470";
+	        String vimeoAPIURL = "http://vimeo.com/api/rest/v2";
+	        service = new ServiceBuilder().provider(VimeoApi.class).apiKey(apiKey).apiSecret(apiSecret).build();
+
+	        OAuthRequest request;
+	        Response response;
+	     
+	        accessToken = new Token("f4c3cd65f825eab77dc6c3a27293b419", "e851d1c36c4634a2985e9f23198a282218875185");
+	        
+	        accessToken = checkToken(vimeoAPIURL, accessToken, service);
+	        if (accessToken == null) {
+	          return;
+	        }
+	        
+	        // Get Quota
+	        request = new OAuthRequest(Verb.GET, vimeoAPIURL);
+	        request.addQuerystringParameter("method", "vimeo.videos.upload.getQuota");
+	        signAndSendToVimeo(request, "getQuota", true);
+	     
+	        // Get Ticket
+	        request = new OAuthRequest(Verb.GET, vimeoAPIURL);
+	        request.addQuerystringParameter("method", "vimeo.videos.upload.getTicket");
+	        request.addQuerystringParameter("upload_method", "streaming");
+	        response = signAndSendToVimeo(request, "getTicket", true);
+	     
+	        // Get Endpoint and ticket ID
+	        System.out.println(newline + newline + "We're sending the video for upload!");
+	        Document doc = readXML(response.getBody());
+	        Element ticketElement = (Element) doc.getDocumentElement().getElementsByTagName("ticket").item(0);
+	        String endpoint = ticketElement.getAttribute("endpoint");
+	        String ticketId = ticketElement.getAttribute("id");
+	        
+	        // Setup File
+	        File testUp = new File(fileLocation);
+	        boolean sendVideo = false;
+			try {
+				sendVideo = sendVideo(endpoint, testUp);
+			} catch (FileNotFoundException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			} catch (IOException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+	        if (!sendVideo) {
+	          Log.v("VidGrab", "Didn't Send Video SUCCESSFULLY");
+	        } else {
+		      Log.v("VidGrab", "VIDEO SENT");
+	        }
+	        
+	        // Complete Upload
+	        request = new OAuthRequest(Verb.PUT, vimeoAPIURL);
+	        request.addQuerystringParameter("method", "vimeo.videos.upload.complete");
+	        request.addQuerystringParameter("filename", testUp.getName());
+	        request.addQuerystringParameter("ticket_id", ticketId);
+	        Response completeResponse = signAndSendToVimeo(request, "complete", true);
+	     
+	        //Set video info
+	        setVimeoVideoInfo(completeResponse, service, accessToken, vimeoAPIURL);
+	  }
+
+	
+	  /**
+	   * Sets the video's meta-data
+	   */
+	  private static void setVimeoVideoInfo(Response response, OAuthService service, Token token, String vimeoAPIURL) {
+	    OAuthRequest request;
+	    Document doc = readXML(response.getBody());
+	    org.w3c.dom.Element ticketElement = (org.w3c.dom.Element) doc.getDocumentElement().getElementsByTagName("ticket").item(0);
+	    String vimeoVideoId = ticketElement.getAttribute("video_id");
+	    //Set title, description, category, tags, private
+	    //Set Title
+	    request = new OAuthRequest(Verb.POST, vimeoAPIURL);
+	    request.addQuerystringParameter("method", "vimeo.videos.setTitle");
+	    request.addQuerystringParameter("title", "Test Title");
+	    request.addQuerystringParameter("video_id", vimeoVideoId);
+	    signAndSendToVimeo(request, "setTitle", true);
+	 
+	    //Set description
+	    request = new OAuthRequest(Verb.POST, vimeoAPIURL);
+	    request.addQuerystringParameter("method", "vimeo.videos.setDescription");
+	    request.addQuerystringParameter("description", "This is my test description");
+	    request.addQuerystringParameter("video_id", vimeoVideoId);
+	    signAndSendToVimeo(request, "setDescription", true);
+	 
+	    List<String> videoTags = new ArrayList<String>();
+	    videoTags.add("test1");
+	    videoTags.add("");
+	    videoTags.add("test3");
+	    videoTags.add("test4");
+	    videoTags.add("test 5");
+	    videoTags.add("test-6");
+	    videoTags.add("test 7 test 7 test 7 test 7 test 7 test 7 test 7 test 7 test 7 test 7 test 7 test 7 test 7 test 7");
+	 
+	    //Create tags string
+	    String tags = "";
+	    for (String tag : videoTags) {
+	      tags += tag + ", ";
+	    }
+	    tags.replace(", , ", ", "); //if by chance there are empty tags.
+	 
+	    //Set Tags
+	    request = new OAuthRequest(Verb.POST, vimeoAPIURL);
+	    request.addQuerystringParameter("method", "vimeo.videos.addTags");
+	    request.addQuerystringParameter("tags", tags);
+	    request.addQuerystringParameter("video_id", vimeoVideoId);
+	    signAndSendToVimeo(request, "addTags", true);
+	 
+	    //Set Privacy
+	    request = new OAuthRequest(Verb.POST, vimeoAPIURL);
+	    request.addQuerystringParameter("method", "vimeo.videos.setPrivacy");
+	    request.addQuerystringParameter("privacy", (true) ? "nobody" : "anybody");
+	    request.addQuerystringParameter("video_id", vimeoVideoId);
+	    signAndSendToVimeo(request, "setPrivacy", true);
+	    
+	    Log.v("VidGrab", "Video URL: vimeo.com/" + vimeoVideoId);
+	  }
+
+	
+	  /**
+	   * Send the video data
+	   *
+	   * @return whether the video successfully sent
+	   */
+	  private static boolean sendVideo(String endpoint, File file) throws FileNotFoundException, IOException {
+	    // Setup File
+	    long contentLength = file.length();
+	    String contentLengthString = Long.toString(contentLength);
+	    FileInputStream is = new FileInputStream(file);
+	    byte[] bytesPortion = new byte[bufferSize];
+	    int maxAttempts = 5; //This is the maximum attempts that will be given to resend data if the vimeo server doesn't have the right number of bytes for the given portion of the video
+	    long lastByteOnServer = 0;
+	    boolean first = false;
+	    while (is.read(bytesPortion, 0, bufferSize) != -1) {
+	      lastByteOnServer = prepareAndSendByteChunk(endpoint, contentLengthString, lastByteOnServer, bytesPortion, first, 0, maxAttempts);
+	      if (lastByteOnServer == -1) {
+	        return false;
+	      }
+	      first = true;
+//	      getProgressBar().setValue(NumberHelper.getPercentFromTotal(byteNumber, getFileSize()));
+	    }
+	    return true;
+	  }
+
+	  /**
+	   * Prepares the given bytes to be sent to Vimeo
+	   *
+	   * @param endpoint
+	   * @param contentLengthString
+	   * @param lastByteOnServer
+	   * @param byteChunk
+	   * @param first
+	   * @param attempt
+	   * @param maxAttempts
+	   * @return number of bytes currently on the server
+	   * @throws FileNotFoundException
+	   * @throws IOException
+	   */
+	  @SuppressLint("NewApi")
+	private static long prepareAndSendByteChunk(String endpoint, String contentLengthString, long lastByteOnServer, byte[] byteChunk, boolean first, int attempt, int maxAttempts) throws FileNotFoundException, IOException {
+	    if (attempt > maxAttempts) {
+	      return -1;
+	    } else if (attempt > 0) {
+	      System.out.println("Attempt number " + attempt + " for video " + "Test Video");
+	    }
+	    long totalBytesShouldBeOnServer = lastByteOnServer + byteChunk.length;
+	    String contentRange = lastByteOnServer + "-" + totalBytesShouldBeOnServer;
+	    long bytesOnServer = sendVideoBytes(endpoint, contentLengthString, "video/mp4", contentRange, byteChunk, first);
+	    if (bytesOnServer != totalBytesShouldBeOnServer) {
+	      System.err.println(bytesOnServer + " (bytesOnServer)" + " != " + totalBytesShouldBeOnServer + " (totalBytesShouldBeOnServer)");
+	      long remainingBytes = totalBytesShouldBeOnServer - bytesOnServer;
+	      int beginning = (int) (byteChunk.length - remainingBytes);
+	      int ending = (int) byteChunk.length;
+	      byte[] newByteChunk = Arrays.copyOfRange(byteChunk, beginning, ending);
+	      return prepareAndSendByteChunk(endpoint, contentLengthString, bytesOnServer, newByteChunk, first, attempt + 1, maxAttempts);
+	    } else {
+	      return bytesOnServer;
+	    }
+	  }
+	 
+	  /**
+	   * Sends the given bytes to the given endpoint
+	   *
+	   * @return the last byte on the server (from verifyUpload(endpoint))
+	   */
+	  private static long sendVideoBytes(String endpoint, String contentLength, String fileType, String contentRange, byte[] fileBytes, boolean addContentRange) throws FileNotFoundException, IOException {
+	    OAuthRequest request = new OAuthRequest(Verb.PUT, endpoint);
+	    request.addHeader("Content-Length", contentLength);
+	    request.addHeader("Content-Type", fileType);
+	    if (addContentRange) {
+	      request.addHeader("Content-Range", "bytes " + contentRange);
+	    }
+	    request.addPayload(fileBytes);
+	    Response response = signAndSendToVimeo(request, "sendVideo on " + "Test title", false);
+	    if (response.getCode() != 200 && !response.isSuccessful()) {
+	      return -1;
+	    }
+	    return verifyUpload(endpoint);
+	  }
+	 
+	  /**
+	   * Verifies the upload and returns whether it's successful
+	   *
+	   * @param endpoint to verify upload to
+	   * @return the last byte on the server
+	   */
+	  private static long verifyUpload(String endpoint) {
+	    // Verify the upload
+	    OAuthRequest request = new OAuthRequest(Verb.PUT, endpoint);
+	    request.addHeader("Content-Length", "0");
+	    request.addHeader("Content-Range", "bytes */*");
+	    Response response = signAndSendToVimeo(request, "verifyUpload to " + endpoint, true);
+	    if (response.getCode() != 308 || !response.isSuccessful()) {
+	      return -1;
+	    }
+	    String range = response.getHeader("Range");
+	    //range = "bytes=0-10485759"
+	    return Long.parseLong(range.substring(range.lastIndexOf("-") + 1)) + 1;
+	    //The + 1 at the end is because Vimeo gives you 0-whatever byte where 0 = the first byte
+	  }
+
+	
+	  /**
+	   * This method will Read the XML and act accordingly
+	   *
+	   * @param xmlString - the XML String
+	   * @return the list of elements within the XML
+	   */
+	  private static Document readXML(String xmlString) {
+	    Document doc = null;
+	    try {
+	      DocumentBuilderFactory dbFactory = DocumentBuilderFactory.newInstance();
+	      DocumentBuilder dBuilder = dbFactory.newDocumentBuilder();
+	      InputSource xmlStream = new InputSource();
+	      xmlStream.setCharacterStream(new StringReader(xmlString));
+	      doc = dBuilder.parse(xmlStream);
+	    } catch (Exception e) {
+	      e.printStackTrace();
+	    }
+	    return doc;
+	  }
+
+
+    /**
+     * Checks the token to make sure it's still valid. If not, it pops up a dialog asking the user to
+     * authenticate.
+     */
+     private static Token checkToken(String vimeoAPIURL, Token vimeoToken, OAuthService vimeoService) {
+       if (vimeoToken == null) {
+         vimeoToken = getNewToken(vimeoService);
+       } else {
+         OAuthRequest request = new OAuthRequest(Verb.GET, vimeoAPIURL);
+         request.addQuerystringParameter("method", "vimeo.oauth.checkAccessToken");
+         Response response = signAndSendToVimeo(request, "checkAccessToken", true);
+         if (response.isSuccessful()
+                 && (response.getCode() != 200 || response.getBody().contains("<err code=\"302\"")
+                 || response.getBody().contains("<err code=\"401\""))) {
+           Log.v("VidGrab", "Token Isn't valid");
+           vimeoToken = getNewToken(vimeoService);
+         } else {
+           Log.v("VidGrab", "Token IS valid");
+         }
+       }
+       return vimeoToken;
+     }
+     
+     /**
+      * Signs the request and sends it. Returns the response.
+      *
+      * @param request
+      * @return response
+      */
+	@SuppressLint("NewApi")
+	public static Response signAndSendToVimeo(final OAuthRequest request, final String description, final boolean printBody) throws org.scribe.exceptions.OAuthException {
+        System.out.println(newline + newline
+                + "Signing " + description + " request:"
+                + ((printBody && !request.getBodyContents().isEmpty()) ? newline + "\tBody Contents:" + request.getBodyContents() : "")
+                + ((!request.getHeaders().isEmpty()) ? newline + "\tHeaders: " + request.getHeaders() : ""));
+        service.signRequest(accessToken, request);
+        printRequest(request, description);
+
+        class SendRequest extends AsyncTask {
+            protected Response doInBackground(Object... urls) {
+                Response response = request.send();
+                printResponse(response, description, printBody);
+				return response;
+            }
+
+            protected Response onPostExecute(Response result) {
+                return result;
+            }
+        }
+        
+        SendRequest sender = new SendRequest();
+        sender.execute(request);
+        
+        Response response = null;
+        
+        try {
+			response = (Response) sender.get();
+		} catch (InterruptedException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		} catch (ExecutionException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+        
+        return response;
+      }
+
+     /**
+      * Gets authorization URL, pops up a dialog asking the user to authenticate with the url and the user
+      * returns the authorization code
+      *
+      * @param service
+      * @return
+      */
+      private static Token getNewToken(OAuthService service) {
+        // Obtain the Authorization URL
+        Token requestToken = service.getRequestToken();
+        String authorizationUrl = service.getAuthorizationUrl(requestToken);
+        do {
+          Log.v("VidGrab", "Auth URL: " + authorizationUrl);
+          break;
+          /*code = null;
+          Verifier verifier = new Verifier(code);
+          // Trade the Request Token and Verfier for the Access Token
+          System.out.println("Trading the Request Token for an Access Token...");
+          try {
+            Token token = service.getAccessToken(requestToken, verifier);
+            System.out.println(token); //Use this output to copy the token into your code so you don't have to do this over and over.
+            return token;
+          } catch (OAuthException ex) {
+            int choice = JOptionPane.showConfirmDialog(null, "There was an OAuthException" + newline
+                    + ex + newline
+                    + "Would you like to try again?", "OAuthException", JOptionPane.YES_NO_OPTION);
+            if (choice == JOptionPane.NO_OPTION) {
+              break;
+            }
+          }*/
+        } while (true);
+        return null;
+      }
+
+      /**
+       * Prints the given description, and the headers, verb, and complete URL of the request.
+       *
+       * @param request
+       * @param description
+       */
+      private static void printRequest(OAuthRequest request, String description) {
+        Log.v("Req", "");
+        Log.v("Req", description + " >>> Request");
+        Log.v("Req", "Headers: " + request.getHeaders());
+        Log.v("Req", "Verb: " + request.getVerb());
+        Log.v("Req", "Complete URL: " + request.getCompleteUrl());
+      }
+
+      /**
+       * Prints the given description, and the code, headers, and body of the given response
+       *
+       * @param response
+       * @param description
+       */
+      private static void printResponse(Response response, String description, boolean printBody) {
+        Log.v("Req", "");
+        Log.v("Req", description + " >>> Response");
+        Log.v("Req", "Code: " + response.getCode());
+        Log.v("Req", "Headers: " + response.getHeaders());
+        if (printBody) {
+          Log.v("Req", "Body: " + response.getBody());
+        }
+      }
+
+	
 	@Override
 	protected void locationChanged(double latitude, double longitude) {
 		if (!mIsReportEditable) {
